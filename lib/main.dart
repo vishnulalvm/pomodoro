@@ -58,8 +58,12 @@ void main() async {
       child: MultiBlocProvider(
         providers: [
           BlocProvider(
-            create: (context) =>
-                PomodoroTimerCubit(pomodoroRepository, statsRepository),
+            create: (context) => PomodoroTimerCubit(
+              pomodoroRepository,
+              statsRepository,
+              firebaseStatsRepository,
+              localStorageService,
+            ),
           ),
           BlocProvider(
             create: (context) => TaskCubit(

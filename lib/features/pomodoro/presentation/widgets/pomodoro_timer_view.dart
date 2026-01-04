@@ -2,25 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../cubit/pomodoro_timer_cubit.dart';
 import '../cubit/pomodoro_timer_state.dart';
+import 'current_task_display.dart';
 
 class PomodoroTimerView extends StatelessWidget {
-  const PomodoroTimerView({super.key});
+  final VoidCallback? onOpenSidebar;
+
+  const PomodoroTimerView({super.key, this.onOpenSidebar});
 
   String _formatTime(int totalSeconds) {
     final minutes = totalSeconds ~/ 60;
     final seconds = totalSeconds % 60;
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
-  }
-
-  String _getCycleText(TimerMode mode, int completedPomodoros) {
-    if (mode == TimerMode.pomodoro) {
-      final currentCycle = (completedPomodoros % 4) + 1;
-      return 'Pomodoro $currentCycle/4';
-    } else if (mode == TimerMode.rest) {
-      return 'Rest';
-    } else {
-      return 'Long Rest';
-    }
   }
 
   Widget _buildDurationBubbles(BuildContext context, PomodoroTimerState state) {
@@ -81,24 +73,10 @@ class PomodoroTimerView extends StatelessWidget {
         return Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Cycle Progress Indicator (hide in REST MODE)
-            if (!state.isRestMode)
-              Text(
-                _getCycleText(state.mode, state.completedPomodoros),
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white.withValues(alpha: 0.8),
-                  letterSpacing: 1.5,
-                ),
-              ),
-            if (!state.isRestMode) const SizedBox(height: 50),
-            if (state.isRestMode) const SizedBox(height: 20),
-            // Modern Square Timer Card - Fixed Size
+            // Combined Timer and Task Container
             Container(
               width: 500,
-              height: 320,
-              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 60),
+              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 40),
               decoration: BoxDecoration(
                 color: Colors.white.withValues(
                   alpha: 0.1,
@@ -111,8 +89,8 @@ class PomodoroTimerView extends StatelessWidget {
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  // Timer Display
                   Text(
                     _formatTime(remaining),
                     style: const TextStyle(
@@ -142,10 +120,19 @@ class PomodoroTimerView extends StatelessWidget {
                           )
                         : null,
                   ),
+                  const SizedBox(height: 30),
+                  // Current Task Display (inside the same container)
+                  CurrentTaskDisplay(
+                    onAddTaskPressed: () {
+                      if (onOpenSidebar != null) {
+                        onOpenSidebar!();
+                      }
+                    },
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 24),
             // Duration selection bubbles (only show in REST MODE when timer not started)
             if (state.isRestMode &&
                 state.status != TimerStatus.running &&
@@ -214,7 +201,7 @@ class PomodoroTimerView extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      'REST',
+                      'BREAK',
                       style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,

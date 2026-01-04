@@ -14,9 +14,6 @@ class TaskCubit extends Cubit<TaskState> {
   final LocalStorageService _localStorageService;
   StreamSubscription<List<Task>>? _taskSubscription;
 
-  // Map to track Hive ID to Firebase ID
-  final Map<int, String> _firebaseIdMap = {};
-
   TaskCubit(
     this._taskRepository,
     this._firebaseTaskRepository,
@@ -46,12 +43,41 @@ class TaskCubit extends Cubit<TaskState> {
         return;
       }
 
-      // Load from Firebase
+      // User logged in - load from Firebase
       try {
+        // First, sync any existing local tasks to Firebase
+        final localTasks = await _taskRepository.getAllTasks();
+        for (final localTask in localTasks) {
+          // Only sync if task doesn't have a Firebase ID yet
+          if (localTask.firebaseId == null) {
+            try {
+              final firebaseId = await _firebaseTaskRepository.saveTask(userId, localTask);
+              localTask.firebaseId = firebaseId;
+              await _taskRepository.updateTask(localTask);
+            } catch (e) {
+              print('Error syncing local task to Firebase: $e');
+            }
+          }
+        }
+
         _taskSubscription?.cancel();
         _taskSubscription = _firebaseTaskRepository.watchTasks(userId).listen(
-          (tasks) {
-            emit(TaskLoaded(tasks));
+          (firebaseTasks) async {
+            // Save Firebase tasks to local Hive for offline access
+            // Clear local tasks first to avoid duplicates
+            final currentLocalTasks = await _taskRepository.getAllTasks();
+            for (final localTask in currentLocalTasks) {
+              if (localTask.id != null) {
+                await _taskRepository.deleteTask(localTask.id!);
+              }
+            }
+
+            // Save Firebase tasks to Hive
+            for (final task in firebaseTasks) {
+              await _taskRepository.addTask(task);
+            }
+
+            emit(TaskLoaded(firebaseTasks));
           },
           onError: (error) {
             print('Firebase watch error: $error');
@@ -85,21 +111,22 @@ class TaskCubit extends Cubit<TaskState> {
     try {
       final task = Task(title: title);
 
-      // Save to Hive first
-      await _taskRepository.addTask(task);
-
-      // Try to sync to Firebase
+      // Try to sync to Firebase first
       final userId = await _localStorageService.getEmail();
       if (userId != null) {
         try {
           final firebaseId = await _firebaseTaskRepository.saveTask(userId, task);
-          if (task.id != null) {
-            _firebaseIdMap[task.id!] = firebaseId;
-          }
+          task.firebaseId = firebaseId;
+          // Save to Hive with Firebase ID
+          await _taskRepository.addTask(task);
         } catch (e) {
           print('Error syncing task to Firebase: $e');
-          // Task is still saved locally, continue
+          // Save locally anyway
+          await _taskRepository.addTask(task);
         }
+      } else {
+        // No user, save locally only
+        await _taskRepository.addTask(task);
       }
     } catch (e) {
       emit(TaskError(e.toString()));
@@ -108,21 +135,26 @@ class TaskCubit extends Cubit<TaskState> {
 
   Future<void> toggleTask(int id) async {
     try {
+      // Get the task first to find its Firebase ID and current status
+      final task = await _taskRepository.getTaskById(id);
+      if (task == null) return;
+
+      // Store the current status BEFORE toggling
+      final currentStatus = task.isCompleted;
+      final firebaseId = task.firebaseId;
+
       // Toggle in Hive first
       await _taskRepository.toggleTaskCompletion(id);
 
-      // Try to sync to Firebase
+      // Try to sync to Firebase with the ORIGINAL status (before toggle)
       final userId = await _localStorageService.getEmail();
-      if (userId != null && _firebaseIdMap.containsKey(id)) {
+      if (userId != null && firebaseId != null) {
         try {
-          final task = await _taskRepository.getTaskById(id);
-          if (task != null) {
-            await _firebaseTaskRepository.toggleTaskCompletion(
-              userId,
-              _firebaseIdMap[id]!,
-              !task.isCompleted,
-            );
-          }
+          await _firebaseTaskRepository.toggleTaskCompletion(
+            userId,
+            firebaseId,
+            currentStatus,  // Use the original status before toggle
+          );
         } catch (e) {
           print('Error syncing toggle to Firebase: $e');
         }
@@ -134,15 +166,18 @@ class TaskCubit extends Cubit<TaskState> {
 
   Future<void> deleteTask(int id) async {
     try {
+      // Get the task first to find its Firebase ID
+      final task = await _taskRepository.getTaskById(id);
+      if (task == null) return;
+
       // Delete from Hive first
       await _taskRepository.deleteTask(id);
 
       // Try to delete from Firebase
       final userId = await _localStorageService.getEmail();
-      if (userId != null && _firebaseIdMap.containsKey(id)) {
+      if (userId != null && task.firebaseId != null) {
         try {
-          await _firebaseTaskRepository.deleteTask(userId, _firebaseIdMap[id]!);
-          _firebaseIdMap.remove(id);
+          await _firebaseTaskRepository.deleteTask(userId, task.firebaseId!);
         } catch (e) {
           print('Error deleting from Firebase: $e');
         }
@@ -154,16 +189,20 @@ class TaskCubit extends Cubit<TaskState> {
 
   Future<void> incrementTaskPomodoro(int id) async {
     try {
+      // Get the task first to find its Firebase ID
+      final task = await _taskRepository.getTaskById(id);
+      if (task == null) return;
+
       // Increment in Hive first
       await _taskRepository.incrementPomodoroCount(id);
 
       // Try to sync to Firebase
       final userId = await _localStorageService.getEmail();
-      if (userId != null && _firebaseIdMap.containsKey(id)) {
+      if (userId != null && task.firebaseId != null) {
         try {
           await _firebaseTaskRepository.incrementPomodoroCount(
             userId,
-            _firebaseIdMap[id]!,
+            task.firebaseId!,
           );
         } catch (e) {
           print('Error syncing pomodoro count to Firebase: $e');

@@ -2,9 +2,12 @@ import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/services/notification_service.dart';
+import '../../../../core/services/local_storage_service.dart';
 import '../../../../data/models/pomodoro_session.dart';
+import '../../../../data/models/daily_stats.dart';
 import '../../../../data/repositories/pomodoro_repository.dart';
 import '../../../../data/repositories/stats_repository.dart';
+import '../../../../data/repositories/firebase_stats_repository.dart';
 import 'pomodoro_timer_state.dart';
 
 class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
@@ -13,6 +16,8 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   final PomodoroRepository _pomodoroRepository;
   final StatsRepository _statsRepository;
+  final FirebaseStatsRepository _firebaseStatsRepository;
+  final LocalStorageService _localStorageService;
 
   static const int _pomodoroDuration = 25 * 60;
   static const int _restDuration = 5 * 60;
@@ -38,6 +43,8 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
   PomodoroTimerCubit(
     this._pomodoroRepository,
     this._statsRepository,
+    this._firebaseStatsRepository,
+    this._localStorageService,
   ) : super(const PomodoroTimerState(duration: _pomodoroDuration));
 
   void setCurrentTask(int? taskId) {
@@ -213,6 +220,25 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
         body: 'Your rest period has ended.',
       );
 
+      // Track rest time
+      if (_sessionStartTime != null) {
+        final restMinutes = state.duration ~/ 60;
+
+        // Update Firebase analytics with rest time
+        final userId = await _localStorageService.getEmail();
+        if (userId != null) {
+          try {
+            await _firebaseStatsRepository.updateAnalyticsAfterSession(
+              userId: userId,
+              pomodoroMinutes: 0, // No pomodoro time
+              restMinutes: restMinutes, // Rest time
+            );
+          } catch (e) {
+            print('Error updating Firebase analytics for rest: $e');
+          }
+        }
+      }
+
       emit(state.copyWith(status: TimerStatus.completed));
       // Stay in rest mode, don't auto-switch
       return;
@@ -221,18 +247,46 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
     // Pomodoro timer completion
     // Save session to database
     if (_sessionStartTime != null) {
+      final pomodoroMinutes = state.duration ~/ 60;
       final session = PomodoroSession(
         startTime: _sessionStartTime!,
         endTime: DateTime.now(),
-        durationMinutes: state.duration ~/ 60,
+        durationMinutes: pomodoroMinutes,
         mode: _mapTimerModeToPomodoroMode(state.mode),
         completed: true,
         taskId: _currentTaskId,
       );
       await _pomodoroRepository.saveSession(session);
 
-      // Update daily stats
+      // Update local daily stats
       await _statsRepository.updateDailyStats(DateTime.now());
+
+      // Sync to Firebase
+      final userId = await _localStorageService.getEmail();
+      if (userId != null) {
+        try {
+          // Save daily stats to Firebase
+          final today = DateTime.now();
+
+          // Get current daily stats from local Hive
+          final localStats = await _statsRepository.getOrCreateDailyStats(today);
+          final dailyStat = DailyStats(
+            date: today,
+            completedPomodoros: localStats.completedPomodoros,
+            focusTimeMinutes: localStats.focusTimeMinutes,
+          );
+          await _firebaseStatsRepository.saveDailyStat(userId, dailyStat);
+
+          // Update user analytics
+          await _firebaseStatsRepository.updateAnalyticsAfterSession(
+            userId: userId,
+            pomodoroMinutes: pomodoroMinutes,
+            restMinutes: 0, // No rest time in pomodoro mode
+          );
+        } catch (e) {
+          print('Error syncing to Firebase: $e');
+        }
+      }
     }
 
     // Auto-switch Logic

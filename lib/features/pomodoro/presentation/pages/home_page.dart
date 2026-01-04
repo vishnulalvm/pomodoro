@@ -1,15 +1,20 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../presentation/widgets/hue_cycle_background.dart';
 import '../../presentation/widgets/pomodoro_timer_view.dart';
 import '../../presentation/widgets/analytics_section.dart';
 import '../../../tasks/presentation/cubit/task_cubit.dart';
+import '../../../analytics/presentation/cubit/stats_cubit.dart';
 import '../../../auth/presentation/widgets/email_dialog.dart';
 import '../../../../core/services/firebase_auth_service.dart';
 import '../../../../core/services/local_storage_service.dart';
 import '../../../../data/repositories/user_repository.dart';
+import '../cubit/pomodoro_timer_cubit.dart';
+import '../cubit/pomodoro_timer_state.dart';
+import 'package:web/web.dart' as web;
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key});
@@ -87,6 +92,10 @@ class _MyHomePageState extends State<MyHomePage> {
 
     if (email != null && mounted) {
       print('User registered with email: $email');
+      // Reload tasks from Firebase now that user is authenticated
+      context.read<TaskCubit>().loadTasks();
+      // Reload stats from Firebase
+      context.read<StatsCubit>().loadStats();
     }
   }
 
@@ -102,10 +111,21 @@ class _MyHomePageState extends State<MyHomePage> {
   void _toggleFullScreen() {
     setState(() {
       _isFullScreen = !_isFullScreen;
-      if (_isFullScreen) {
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
+      if (kIsWeb) {
+        // Web: Use new package:web Fullscreen API
+        if (_isFullScreen) {
+          web.document.documentElement?.requestFullscreen();
+        } else {
+          web.document.exitFullscreen();
+        }
       } else {
-        SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+        // Mobile: Use SystemChrome
+        if (_isFullScreen) {
+          SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+        } else {
+          SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+        }
       }
     });
   }
@@ -123,11 +143,19 @@ class _MyHomePageState extends State<MyHomePage> {
               PageView(
                 controller: _pageController,
                 scrollDirection: Axis.vertical,
-                children: const [
+                children: [
                   // Page 1: Timer
-                  Center(child: PomodoroTimerView()),
+                  Center(
+                    child: PomodoroTimerView(
+                      onOpenSidebar: () {
+                        setState(() {
+                          _isSidebarOpen = true;
+                        });
+                      },
+                    ),
+                  ),
                   // Page 2: Analytics
-                  Center(child: AnalyticsSection()),
+                  const Center(child: AnalyticsSection()),
                 ],
               ),
 
@@ -382,49 +410,93 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
               ),
 
-              // Layer 3: Top Navigation Bar (Always Visible)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: AppBar(
-                  backgroundColor: Colors.transparent,
-                  elevation: 0,
-                  leading: IconButton(
-                    icon: Icon(
-                      _isSidebarOpen ? Icons.close : Icons.menu,
-                      size: 30,
-                      color: Colors.white,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _isSidebarOpen = !_isSidebarOpen;
-                      });
+              // Layer 3: Top Navigation Bar (hide in fullscreen)
+              if (!_isFullScreen)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: BlocBuilder<PomodoroTimerCubit, PomodoroTimerState>(
+                    builder: (context, state) {
+                      final completedPomodoros = state.completedPomodoros;
+                      final currentCycle = (completedPomodoros % 4) + 1;
+                      final isRestMode = state.isRestMode;
+
+                      return AppBar(
+                        backgroundColor: Colors.transparent,
+                        elevation: 0,
+                        centerTitle: true,
+                        title: _currentPage == 0 && !isRestMode
+                            ? Text(
+                                'Pomodoro $currentCycle/4',
+                                style: TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                ),
+                              )
+                            : _currentPage == 1
+                                ? Text(
+                                    'Performance',
+                                    style: TextStyle(
+                                      fontSize: 32,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.white.withValues(alpha: 0.9),
+                                    ),
+                                  )
+                                : null,
+                        leading: IconButton(
+                          icon: Icon(
+                            _isSidebarOpen ? Icons.close : Icons.menu,
+                            size: 30,
+                            color: Colors.white,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _isSidebarOpen = !_isSidebarOpen;
+                            });
+                          },
+                        ),
+                        actions: [
+                          IconButton(
+                            icon: Icon(
+                              _isFullScreen
+                                  ? Icons.fullscreen_exit
+                                  : Icons.fullscreen,
+                              size: 30,
+                              color: Colors.white,
+                            ),
+                            onPressed: _toggleFullScreen,
+                          ),
+                          const SizedBox(width: 10),
+                        ],
+                      );
                     },
                   ),
-                  actions: [
-                    IconButton(
-                      icon: Icon(
-                        _isFullScreen
-                            ? Icons.fullscreen_exit
-                            : Icons.fullscreen,
-                        size: 30,
-                        color: Colors.white,
-                      ),
-                      onPressed: _toggleFullScreen,
-                    ),
-                    const SizedBox(width: 10),
-                  ],
                 ),
-              ),
 
-              // Layer 4: Bottom Navigation Arrow
+              // Layer 4: Fullscreen Exit Button (show only in fullscreen)
+              if (_isFullScreen)
+                Positioned(
+                  top: 20,
+                  right: 20,
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.fullscreen_exit,
+                      size: 32,
+                      color: Colors.white,
+                    ),
+                    onPressed: _toggleFullScreen,
+                  ),
+                ),
+
+              // Layer 5: Bottom Navigation Arrow
               Positioned(
                 bottom: 20,
                 left: 0,
                 right: 0,
                 child: Center(
-                  child: MouseRegion(
+                child: MouseRegion(
                     onEnter: (_) {
                       setState(() {
                         _isArrowHovered = true;

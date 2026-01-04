@@ -25,8 +25,17 @@ class TaskRepository {
   Future<List<Task>> getAllTasks() async {
     final box = _hiveService.tasks;
     final tasks = box.values.toList();
-    tasks.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return tasks;
+
+    // Separate active and completed tasks
+    final activeTasks = tasks.where((t) => !t.isCompleted).toList();
+    final completedTasks = tasks.where((t) => t.isCompleted).toList();
+
+    // Sort both by createdAt ascending (oldest first)
+    activeTasks.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    completedTasks.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+    // Active tasks first, then completed tasks
+    return [...activeTasks, ...completedTasks];
   }
 
   Future<List<Task>> getActiveTasks() async {
@@ -71,8 +80,17 @@ class TaskRepository {
     // Initial emission
     List<Task> getSortedTasks() {
       final tasks = box.values.toList();
-      tasks.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return tasks;
+
+      // Separate active and completed tasks
+      final activeTasks = tasks.where((t) => !t.isCompleted).toList();
+      final completedTasks = tasks.where((t) => t.isCompleted).toList();
+
+      // Sort both by createdAt ascending (oldest first)
+      activeTasks.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      completedTasks.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+      // Active tasks first, then completed tasks
+      return [...activeTasks, ...completedTasks];
     }
 
     yield getSortedTasks();

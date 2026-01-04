@@ -19,11 +19,15 @@ class Task extends HiveObject {
   @HiveField(4)
   late int pomodoroCount;
 
+  @HiveField(5)
+  String? firebaseId;
+
   Task({
     this.id,
     required this.title,
     this.isCompleted = false,
     this.pomodoroCount = 0,
+    this.firebaseId,
   }) {
     createdAt = DateTime.now();
   }
@@ -41,12 +45,13 @@ class Task extends HiveObject {
   }
 
   // Create from Firestore Map
-  factory Task.fromMap(Map<String, dynamic> map, {int? localId}) {
+  factory Task.fromMap(Map<String, dynamic> map, {int? localId, String? firebaseId}) {
     return Task(
       id: localId,
       title: map['title'] as String,
       isCompleted: map['isCompleted'] as bool? ?? false,
       pomodoroCount: map['pomodoroCount'] as int? ?? 0,
+      firebaseId: firebaseId,
     )..createdAt = DateTime.parse(map['createdAt'] as String);
   }
 }

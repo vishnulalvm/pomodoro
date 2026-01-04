@@ -11,12 +11,19 @@ class FirebaseTaskRepository {
           .collection('users')
           .doc(userId)
           .collection('tasks')
-          .orderBy('createdAt', descending: true)
+          .orderBy('createdAt', descending: false)  // Ascending order (oldest first)
           .get();
 
-      return snapshot.docs
-          .map((doc) => Task.fromMap(doc.data())..id = doc.id.hashCode)
+      final tasks = snapshot.docs
+          .map((doc) => Task.fromMap(doc.data(), firebaseId: doc.id))
           .toList();
+
+      // Separate active and completed tasks
+      final activeTasks = tasks.where((t) => !t.isCompleted).toList();
+      final completedTasks = tasks.where((t) => t.isCompleted).toList();
+
+      // Active tasks first, then completed tasks
+      return [...activeTasks, ...completedTasks];
     } catch (e) {
       print('Error getting tasks: $e');
       rethrow;
@@ -110,11 +117,20 @@ class FirebaseTaskRepository {
         .collection('users')
         .doc(userId)
         .collection('tasks')
-        .orderBy('createdAt', descending: true)
+        .orderBy('createdAt', descending: false)  // Ascending order (oldest first)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => Task.fromMap(doc.data())..id = doc.id.hashCode)
-            .toList());
+        .map((snapshot) {
+          final tasks = snapshot.docs
+              .map((doc) => Task.fromMap(doc.data(), firebaseId: doc.id))
+              .toList();
+
+          // Separate active and completed tasks
+          final activeTasks = tasks.where((t) => !t.isCompleted).toList();
+          final completedTasks = tasks.where((t) => t.isCompleted).toList();
+
+          // Active tasks first, then completed tasks
+          return [...activeTasks, ...completedTasks];
+        });
   }
 
   // Sync local task to Firebase
