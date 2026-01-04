@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/daily_stats.dart';
 import '../models/streak_stats.dart';
 import '../models/user_analytics.dart';
+import '../models/timer_state.dart';
 
 class FirebaseStatsRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -153,6 +154,146 @@ class FirebaseStatsRepository {
     } catch (e) {
       print('Error updating analytics: $e');
       rethrow;
+    }
+  }
+
+  // ==================== TIMER STATE SYNC METHODS ====================
+
+  /// Save current timer state to Firebase for cross-device sync
+  Future<void> saveTimerState(TimerState timerState) async {
+    try {
+      await _firestore
+          .collection('users')
+          .doc(timerState.userId)
+          .collection('timer_state')
+          .doc('current')
+          .set(timerState.toMap());
+    } catch (e) {
+      print('Error saving timer state: $e');
+      rethrow;
+    }
+  }
+
+  /// Get current timer state from Firebase
+  Future<TimerState?> getTimerState(String userId) async {
+    try {
+      final doc = await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('timer_state')
+          .doc('current')
+          .get();
+
+      if (doc.exists && doc.data() != null) {
+        return TimerState.fromMap(doc.data()!);
+      }
+      return null;
+    } catch (e) {
+      print('Error getting timer state: $e');
+      return null;
+    }
+  }
+
+  /// Stream timer state changes for real-time cross-device sync
+  Stream<TimerState?> streamTimerState(String userId) {
+    return _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('timer_state')
+        .doc('current')
+        .snapshots()
+        .map((snapshot) {
+      if (snapshot.exists && snapshot.data() != null) {
+        return TimerState.fromMap(snapshot.data()!);
+      }
+      return null;
+    });
+  }
+
+  /// Delete timer state (called when session completes or resets)
+  Future<void> deleteTimerState(String userId) async {
+    try {
+      await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('timer_state')
+          .doc('current')
+          .delete();
+    } catch (e) {
+      print('Error deleting timer state: $e');
+      rethrow;
+    }
+  }
+
+  // ==================== PARTIAL SESSION TRACKING ====================
+
+  /// Save partial session data (for incomplete/paused sessions)
+  Future<void> savePartialSession({
+    required String userId,
+    required String sessionId,
+    required DateTime startTime,
+    required int accumulatedMinutes,
+    required String mode,
+    String? taskId,
+    bool isCompleted = false,
+  }) async {
+    try {
+      await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('partial_sessions')
+          .doc(sessionId)
+          .set({
+        'startTime': startTime.toIso8601String(),
+        'accumulatedMinutes': accumulatedMinutes,
+        'mode': mode,
+        'taskId': taskId,
+        'isCompleted': isCompleted,
+        'lastUpdated': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      print('Error saving partial session: $e');
+      rethrow;
+    }
+  }
+
+  /// Mark partial session as completed
+  Future<void> completePartialSession(String userId, String sessionId) async {
+    try {
+      await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('partial_sessions')
+          .doc(sessionId)
+          .update({
+        'isCompleted': true,
+        'completedAt': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      print('Error completing partial session: $e');
+      rethrow;
+    }
+  }
+
+  /// Get all partial sessions for a user (for analytics/history)
+  Future<List<Map<String, dynamic>>> getPartialSessions(
+      String userId, {DateTime? since}) async {
+    try {
+      Query query = _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('partial_sessions');
+
+      if (since != null) {
+        query = query.where('startTime',
+            isGreaterThanOrEqualTo: since.toIso8601String());
+      }
+
+      final snapshot = await query.get();
+      return snapshot.docs.map((doc) => doc.data() as Map<String, dynamic>).toList();
+    } catch (e) {
+      print('Error getting partial sessions: $e');
+      return [];
     }
   }
 }

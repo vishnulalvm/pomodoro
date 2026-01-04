@@ -23,7 +23,6 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-
 class _MyHomePageState extends State<MyHomePage> {
   // Sidebar State
   bool _isSidebarOpen = false;
@@ -32,6 +31,11 @@ class _MyHomePageState extends State<MyHomePage> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
   bool _isArrowHovered = false;
+
+  // Hover states for buttons
+  bool _isAddTaskButtonHovered = false;
+  bool _isMenuButtonHovered = false;
+  bool _isFullscreenButtonHovered = false;
 
   late final FirebaseAuthService _authService;
   late final LocalStorageService _localStorageService;
@@ -66,19 +70,24 @@ class _MyHomePageState extends State<MyHomePage> {
       final hasUser = await _localStorageService.hasUser();
 
       if (!hasUser) {
-        // User doesn't exist locally, show email dialog
-        _showEmailDialog();
+        // User doesn't exist locally, show email dialog immediately
+        if (mounted) {
+          _showEmailDialog();
+        }
       } else {
-        // User exists, optionally sign in anonymously in background
+        // User exists, sign in anonymously in background (non-blocking)
         final firebaseUser = _authService.getCurrentFirebaseUser();
         if (firebaseUser == null) {
-          await _authService.signInAnonymously();
+          // Do this in background without awaiting
+          _authService.signInAnonymously();
         }
       }
     } catch (e) {
       print('Error checking user: $e');
       // If error, show dialog to be safe
-      _showEmailDialog();
+      if (mounted) {
+        _showEmailDialog();
+      }
     }
   }
 
@@ -160,254 +169,301 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
 
               // Layer 2: Custom Persistent Sidebar
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-                left: _isSidebarOpen ? 0 : -300,
-                top: 0,
-                bottom: 0,
-                width: 300,
-                child: ClipRect(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(
-                          alpha: 0.1,
-                        ), // Glass effect
-                        border: Border(
-                          right: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.2),
-                            width: 1,
-                          ),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const SizedBox(height: 80), // Space for top bar
-                          // Header
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            child: Text(
-                              "Tasks",
-                              style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.9),
-                                fontSize: 32,
-                                fontWeight: FontWeight.bold,
+              Builder(
+                builder: (context) {
+                  final screenWidth = MediaQuery.of(context).size.width;
+                  final sidebarWidth = screenWidth > 600
+                      ? 300.0
+                      : screenWidth * 0.85;
+
+                  return AnimatedPositioned(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    left: _isSidebarOpen ? 0 : -sidebarWidth,
+                    top: 0,
+                    bottom: 0,
+                    width: sidebarWidth,
+                    child: ClipRect(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(
+                              alpha: 0.1,
+                            ), // Glass effect
+                            border: Border(
+                              right: BorderSide(
+                                color: Colors.white.withValues(alpha: 0.2),
+                                width: 1,
                               ),
                             ),
                           ),
-                          const SizedBox(height: 20),
-                          // Scrollable Task List
-                          Expanded(
-                            child: BlocBuilder<TaskCubit, TaskState>(
-                              builder: (context, state) {
-                                if (state is TaskLoading) {
-                                  return const Center(
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                    ),
-                                  );
-                                }
-
-                                if (state is TaskError) {
-                                  return Center(
-                                    child: Text(
-                                      'Error: ${state.message}',
-                                      style: const TextStyle(color: Colors.red),
-                                    ),
-                                  );
-                                }
-
-                                if (state is TaskLoaded) {
-                                  final tasks = state.tasks;
-
-                                  if (tasks.isEmpty) {
-                                    return Center(
-                                      child: Text(
-                                        'No tasks yet.\nAdd your first task below!',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.6,
-                                          ),
-                                          fontSize: 16,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 80), // Space for top bar
+                              // Header
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                ),
+                                child: Text(
+                                  "Tasks",
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.9),
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              // Scrollable Task List
+                              Expanded(
+                                child: BlocBuilder<TaskCubit, TaskState>(
+                                  builder: (context, state) {
+                                    if (state is TaskLoading) {
+                                      return const Center(
+                                        child: CircularProgressIndicator(
+                                          color: Colors.white,
                                         ),
-                                      ),
-                                    );
-                                  }
+                                      );
+                                    }
 
-                                  return ListView.builder(
-                                    itemCount: tasks.length,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 20,
-                                    ),
-                                    itemBuilder: (context, index) {
-                                      final task = tasks[index];
-                                      final isCompleted = task.isCompleted;
-                                      return Container(
-                                        margin: const EdgeInsets.only(
-                                          bottom: 15,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white.withValues(
-                                            alpha: 0.1,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            15,
-                                          ),
-                                          border: Border.all(
-                                            color: Colors.white.withValues(
-                                              alpha: 0.2,
-                                            ),
-                                          ),
-                                        ),
-                                        child: Material(
-                                          color: Colors.transparent,
-                                          child: InkWell(
-                                            borderRadius: BorderRadius.circular(
-                                              15,
-                                            ),
-                                            onTap: () {
-                                              if (task.id != null) {
-                                                context
-                                                    .read<TaskCubit>()
-                                                    .toggleTask(task.id!);
-                                              }
-                                            },
-                                            child: Padding(
-                                              padding: const EdgeInsets.all(
-                                                16.0,
-                                              ),
-                                              child: Row(
-                                                children: [
-                                                  Container(
-                                                    width: 24,
-                                                    height: 24,
-                                                    decoration: BoxDecoration(
-                                                      shape: BoxShape.circle,
-                                                      border: Border.all(
-                                                        color: isCompleted
-                                                            ? Colors.greenAccent
-                                                            : Colors.white,
-                                                        width: 2,
-                                                      ),
-                                                      color: isCompleted
-                                                          ? Colors.greenAccent
-                                                          : Colors.transparent,
-                                                    ),
-                                                    child: isCompleted
-                                                        ? const Icon(
-                                                            Icons.check,
-                                                            size: 16,
-                                                            color: Colors.black,
-                                                          )
-                                                        : null,
-                                                  ),
-                                                  const SizedBox(width: 15),
-                                                  Expanded(
-                                                    child: Text(
-                                                      task.title,
-                                                      style: TextStyle(
-                                                        color: Colors.white,
-                                                        fontSize: 16,
-                                                        decoration: isCompleted
-                                                            ? TextDecoration
-                                                                  .lineThrough
-                                                            : TextDecoration
-                                                                  .none,
-                                                        decorationColor:
-                                                            Colors.white,
-                                                        decorationThickness: 2,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  if (task.pomodoroCount > 0)
-                                                    Container(
-                                                      padding:
-                                                          const EdgeInsets.symmetric(
-                                                            horizontal: 8,
-                                                            vertical: 4,
-                                                          ),
-                                                      decoration: BoxDecoration(
-                                                        color: Colors.white
-                                                            .withValues(
-                                                              alpha: 0.2,
-                                                            ),
-                                                        borderRadius:
-                                                            BorderRadius.circular(
-                                                              10,
-                                                            ),
-                                                      ),
-                                                      child: Text(
-                                                        '${task.pomodoroCount}',
-                                                        style: const TextStyle(
-                                                          color: Colors.white,
-                                                          fontSize: 12,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                ],
-                                              ),
-                                            ),
+                                    if (state is TaskError) {
+                                      return Center(
+                                        child: Text(
+                                          'Error: ${state.message}',
+                                          style: const TextStyle(
+                                            color: Colors.red,
                                           ),
                                         ),
                                       );
-                                    },
-                                  );
-                                }
+                                    }
 
-                                return const SizedBox();
-                              },
-                            ),
-                          ),
-                          // Embedded Task Input
-                          Container(
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.1),
-                              border: Border(
-                                top: BorderSide(
-                                  color: Colors.white.withValues(alpha: 0.2),
+                                    if (state is TaskLoaded) {
+                                      final tasks = state.tasks;
+
+                                      if (tasks.isEmpty) {
+                                        return Center(
+                                          child: Text(
+                                            'No tasks yet.\nAdd your first task below!',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.6,
+                                              ),
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                        );
+                                      }
+
+                                      return ListView.builder(
+                                        itemCount: tasks.length,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 20,
+                                        ),
+                                        itemBuilder: (context, index) {
+                                          final task = tasks[index];
+                                          final isCompleted = task.isCompleted;
+                                          return Container(
+                                            margin: const EdgeInsets.only(
+                                              bottom: 15,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.1,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(15),
+                                              border: Border.all(
+                                                color: Colors.white.withValues(
+                                                  alpha: 0.2,
+                                                ),
+                                              ),
+                                            ),
+                                            child: Material(
+                                              color: Colors.transparent,
+                                              child: InkWell(
+                                                borderRadius:
+                                                    BorderRadius.circular(15),
+                                                onTap: () {
+                                                  if (task.id != null) {
+                                                    context
+                                                        .read<TaskCubit>()
+                                                        .toggleTask(task.id!);
+                                                  }
+                                                },
+                                                child: Padding(
+                                                  padding: const EdgeInsets.all(
+                                                    16.0,
+                                                  ),
+                                                  child: Row(
+                                                    children: [
+                                                      Container(
+                                                        width: 24,
+                                                        height: 24,
+                                                        decoration: BoxDecoration(
+                                                          shape:
+                                                              BoxShape.circle,
+                                                          border: Border.all(
+                                                            color: isCompleted
+                                                                ? Colors
+                                                                      .greenAccent
+                                                                : Colors.white,
+                                                            width: 2,
+                                                          ),
+                                                          color: isCompleted
+                                                              ? Colors
+                                                                    .greenAccent
+                                                              : Colors
+                                                                    .transparent,
+                                                        ),
+                                                        child: isCompleted
+                                                            ? const Icon(
+                                                                Icons.check,
+                                                                size: 16,
+                                                                color: Colors
+                                                                    .black,
+                                                              )
+                                                            : null,
+                                                      ),
+                                                      const SizedBox(width: 15),
+                                                      Expanded(
+                                                        child: Text(
+                                                          task.title,
+                                                          style: TextStyle(
+                                                            color: Colors.white,
+                                                            fontSize: 16,
+                                                            decoration:
+                                                                isCompleted
+                                                                ? TextDecoration
+                                                                      .lineThrough
+                                                                : TextDecoration
+                                                                      .none,
+                                                            decorationColor:
+                                                                Colors.white,
+                                                            decorationThickness:
+                                                                2,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      if (task.pomodoroCount >
+                                                          0)
+                                                        Container(
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                horizontal: 8,
+                                                                vertical: 4,
+                                                              ),
+                                                          decoration: BoxDecoration(
+                                                            color: Colors.white
+                                                                .withValues(
+                                                                  alpha: 0.2,
+                                                                ),
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  10,
+                                                                ),
+                                                          ),
+                                                          child: Text(
+                                                            '${task.pomodoroCount}',
+                                                            style:
+                                                                const TextStyle(
+                                                                  color: Colors
+                                                                      .white,
+                                                                  fontSize: 12,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold,
+                                                                ),
+                                                          ),
+                                                        ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      );
+                                    }
+
+                                    return const SizedBox();
+                                  },
                                 ),
                               ),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: _taskController,
-                                    style: const TextStyle(color: Colors.white),
-                                    decoration: InputDecoration(
-                                      hintText: "Add a new task...",
-                                      hintStyle: TextStyle(
-                                        color: Colors.white.withValues(
-                                          alpha: 0.5,
+                              // Embedded Task Input
+                              Container(
+                                padding: EdgeInsets.only(
+                                  left: 20,
+                                  right: 20,
+                                  top: 20,
+                                  bottom:
+                                      20 +
+                                      MediaQuery.of(context).viewInsets.bottom,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.1),
+                                  border: Border(
+                                    top: BorderSide(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.2,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextField(
+                                        controller: _taskController,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                        ),
+                                        decoration: InputDecoration(
+                                          hintText: "Add a new task...",
+                                          hintStyle: TextStyle(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.5,
+                                            ),
+                                          ),
+                                          border: InputBorder.none,
+                                        ),
+                                        onSubmitted: (_) => _addTask(),
+                                      ),
+                                    ),
+                                    MouseRegion(
+                                      onEnter: (_) => setState(() => _isAddTaskButtonHovered = true),
+                                      onExit: (_) => setState(() => _isAddTaskButtonHovered = false),
+                                      child: AnimatedScale(
+                                        scale: _isAddTaskButtonHovered ? 1.2 : 1.0,
+                                        duration: const Duration(milliseconds: 200),
+                                        child: AnimatedRotation(
+                                          turns: _isAddTaskButtonHovered ? 0.25 : 0.0,
+                                          duration: const Duration(milliseconds: 200),
+                                          child: IconButton(
+                                            icon: Icon(
+                                              Icons.add_circle,
+                                              color: _isAddTaskButtonHovered
+                                                  ? Colors.greenAccent
+                                                  : Colors.white,
+                                            ),
+                                            onPressed: _addTask,
+                                          ),
                                         ),
                                       ),
-                                      border: InputBorder.none,
                                     ),
-                                    onSubmitted: (_) => _addTask(),
-                                  ),
+                                  ],
                                 ),
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.add_circle,
-                                    color: Colors.white,
-                                  ),
-                                  onPressed: _addTask,
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
 
               // Layer 3: Top Navigation Bar (hide in fullscreen)
@@ -436,37 +492,57 @@ class _MyHomePageState extends State<MyHomePage> {
                                 ),
                               )
                             : _currentPage == 1
-                                ? Text(
-                                    'Performance',
-                                    style: TextStyle(
-                                      fontSize: 32,
-                                      fontWeight: FontWeight.w900,
-                                      color: Colors.white.withValues(alpha: 0.9),
-                                    ),
-                                  )
-                                : null,
-                        leading: IconButton(
-                          icon: Icon(
-                            _isSidebarOpen ? Icons.close : Icons.menu,
-                            size: 30,
-                            color: Colors.white,
+                            ? Text(
+                                'Performance',
+                                style: TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                ),
+                              )
+                            : null,
+                        leading: MouseRegion(
+                          onEnter: (_) => setState(() => _isMenuButtonHovered = true),
+                          onExit: (_) => setState(() => _isMenuButtonHovered = false),
+                          child: AnimatedScale(
+                            scale: _isMenuButtonHovered ? 1.2 : 1.0,
+                            duration: const Duration(milliseconds: 200),
+                            child: IconButton(
+                              icon: Icon(
+                                _isSidebarOpen ? Icons.close : Icons.menu,
+                                size: 30,
+                                color: _isMenuButtonHovered
+                                    ? Colors.white
+                                    : Colors.white.withValues(alpha: 0.8),
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _isSidebarOpen = !_isSidebarOpen;
+                                });
+                              },
+                            ),
                           ),
-                          onPressed: () {
-                            setState(() {
-                              _isSidebarOpen = !_isSidebarOpen;
-                            });
-                          },
                         ),
                         actions: [
-                          IconButton(
-                            icon: Icon(
-                              _isFullScreen
-                                  ? Icons.fullscreen_exit
-                                  : Icons.fullscreen,
-                              size: 30,
-                              color: Colors.white,
+                          MouseRegion(
+                            onEnter: (_) => setState(() => _isFullscreenButtonHovered = true),
+                            onExit: (_) => setState(() => _isFullscreenButtonHovered = false),
+                            child: AnimatedScale(
+                              scale: _isFullscreenButtonHovered ? 1.2 : 1.0,
+                              duration: const Duration(milliseconds: 200),
+                              child: IconButton(
+                                icon: Icon(
+                                  _isFullScreen
+                                      ? Icons.fullscreen_exit
+                                      : Icons.fullscreen,
+                                  size: 30,
+                                  color: _isFullscreenButtonHovered
+                                      ? Colors.white
+                                      : Colors.white.withValues(alpha: 0.8),
+                                ),
+                                onPressed: _toggleFullScreen,
+                              ),
                             ),
-                            onPressed: _toggleFullScreen,
                           ),
                           const SizedBox(width: 10),
                         ],
@@ -490,57 +566,59 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                 ),
 
-              // Layer 5: Bottom Navigation Arrow
-              Positioned(
-                bottom: 20,
-                left: 0,
-                right: 0,
-                child: Center(
-                child: MouseRegion(
-                    onEnter: (_) {
-                      setState(() {
-                        _isArrowHovered = true;
-                      });
-                    },
-                    onExit: (_) {
-                      setState(() {
-                        _isArrowHovered = false;
-                      });
-                    },
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () {
-                          final targetPage = _currentPage == 0 ? 1 : 0;
-                          _pageController.animateToPage(
-                            targetPage,
-                            duration: const Duration(milliseconds: 500),
-                            curve: Curves.easeInOut,
-                          );
-                        },
-                        borderRadius: BorderRadius.circular(30),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: _isArrowHovered
-                                ? Colors.white.withValues(alpha: 0.15)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(30),
-                            border: _isArrowHovered
-                                ? Border.all(
-                                    color: Colors.white.withValues(alpha: 0.3),
-                                    width: 1.5,
-                                  )
-                                : null,
-                          ),
-                          child: AnimatedRotation(
-                            turns: _currentPage == 0 ? 0 : 0.5,
-                            duration: const Duration(milliseconds: 300),
-                            child: Icon(
-                              Icons.keyboard_arrow_down_rounded,
-                              color: Colors.white.withValues(alpha: 0.9),
-                              size: 32,
+              // Layer 5: Bottom Navigation Arrow (hide when sidebar is open)
+              if (!_isSidebarOpen)
+                Positioned(
+                  bottom: 20,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: MouseRegion(
+                      onEnter: (_) {
+                        setState(() {
+                          _isArrowHovered = true;
+                        });
+                      },
+                      onExit: (_) {
+                        setState(() {
+                          _isArrowHovered = false;
+                        });
+                      },
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            final targetPage = _currentPage == 0 ? 1 : 0;
+                            _pageController.animateToPage(
+                              targetPage,
+                              duration: const Duration(milliseconds: 500),
+                              curve: Curves.easeInOut,
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(30),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: _isArrowHovered
+                                  ? Colors.white.withValues(alpha: 0.15)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(30),
+                              border: _isArrowHovered
+                                  ? Border.all(
+                                      color: Colors.white.withValues(alpha: 0.3),
+                                      width: 1.5,
+                                    )
+                                  : null,
+                            ),
+                            child: AnimatedRotation(
+                              turns: _currentPage == 0 ? 0 : 0.5,
+                              duration: const Duration(milliseconds: 300),
+                              child: Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                color: Colors.white.withValues(alpha: 0.9),
+                                size: 32,
+                              ),
                             ),
                           ),
                         ),
@@ -548,7 +626,6 @@ class _MyHomePageState extends State<MyHomePage> {
                     ),
                   ),
                 ),
-              ),
             ],
           ),
         ),

@@ -4,10 +4,20 @@ import '../cubit/pomodoro_timer_cubit.dart';
 import '../cubit/pomodoro_timer_state.dart';
 import 'current_task_display.dart';
 
-class PomodoroTimerView extends StatelessWidget {
+class PomodoroTimerView extends StatefulWidget {
   final VoidCallback? onOpenSidebar;
 
   const PomodoroTimerView({super.key, this.onOpenSidebar});
+
+  @override
+  State<PomodoroTimerView> createState() => _PomodoroTimerViewState();
+}
+
+class _PomodoroTimerViewState extends State<PomodoroTimerView> {
+  bool _isStartButtonHovered = false;
+  bool _isBreakButtonHovered = false;
+  bool _isResetButtonHovered = false;
+  final Map<int, bool> _durationBubbleHovered = {};
 
   String _formatTime(int totalSeconds) {
     final minutes = totalSeconds ~/ 60;
@@ -22,36 +32,50 @@ class PomodoroTimerView extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: durations.map((duration) {
         final isSelected = state.restDuration == duration * 60;
+        final isHovered = _durationBubbleHovered[duration] ?? false;
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: GestureDetector(
-            onTap: () {
-              context.read<PomodoroTimerCubit>().setRestDuration(duration);
-            },
-            child: Container(
-              width: 70,
-              height: 70,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isSelected
-                    ? Colors.white.withValues(alpha: 0.3)
-                    : Colors.white.withValues(alpha: 0.15),
-                border: Border.all(
-                  color: isSelected
-                      ? Colors.white.withValues(alpha: 0.7)
-                      : Colors.white.withValues(alpha: 0.3),
-                  width: 2,
-                ),
-              ),
-              child: Center(
-                child: Text(
-                  '$duration',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _durationBubbleHovered[duration] = true),
+            onExit: (_) => setState(() => _durationBubbleHovered[duration] = false),
+            child: GestureDetector(
+              onTap: () {
+                context.read<PomodoroTimerCubit>().setRestDuration(duration);
+              },
+              child: AnimatedScale(
+                scale: isHovered ? 1.1 : 1.0,
+                duration: const Duration(milliseconds: 200),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 70,
+                  height: 70,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
                     color: isSelected
-                        ? Colors.white
-                        : Colors.white.withValues(alpha: 0.7),
+                        ? Colors.white.withValues(alpha: 0.3)
+                        : isHovered
+                            ? Colors.white.withValues(alpha: 0.25)
+                            : Colors.white.withValues(alpha: 0.15),
+                    border: Border.all(
+                      color: isSelected
+                          ? Colors.white.withValues(alpha: 0.7)
+                          : isHovered
+                              ? Colors.white.withValues(alpha: 0.5)
+                              : Colors.white.withValues(alpha: 0.3),
+                      width: 2,
+                    ),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '$duration',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: isSelected
+                            ? Colors.white
+                            : Colors.white.withValues(alpha: 0.7),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -105,16 +129,30 @@ class PomodoroTimerView extends StatelessWidget {
                     height: 48,
                     child: (state.status == TimerStatus.running ||
                             state.status == TimerStatus.paused)
-                        ? GestureDetector(
-                            onTap: () {
-                              context.read<PomodoroTimerCubit>().resetTimer();
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.only(top: 20),
-                              child: Icon(
-                                Icons.refresh_rounded,
-                                color: Colors.white.withValues(alpha: 0.7),
-                                size: 28,
+                        ? MouseRegion(
+                            onEnter: (_) => setState(() => _isResetButtonHovered = true),
+                            onExit: (_) => setState(() => _isResetButtonHovered = false),
+                            child: GestureDetector(
+                              onTap: () {
+                                context.read<PomodoroTimerCubit>().resetTimer();
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.only(top: 20),
+                                child: AnimatedScale(
+                                  scale: _isResetButtonHovered ? 1.2 : 1.0,
+                                  duration: const Duration(milliseconds: 200),
+                                  child: AnimatedRotation(
+                                    turns: _isResetButtonHovered ? 0.5 : 0.0,
+                                    duration: const Duration(milliseconds: 200),
+                                    child: Icon(
+                                      Icons.refresh_rounded,
+                                      color: _isResetButtonHovered
+                                          ? Colors.white
+                                          : Colors.white.withValues(alpha: 0.7),
+                                      size: 28,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           )
@@ -124,8 +162,8 @@ class PomodoroTimerView extends StatelessWidget {
                   // Current Task Display (inside the same container)
                   CurrentTaskDisplay(
                     onAddTaskPressed: () {
-                      if (onOpenSidebar != null) {
-                        onOpenSidebar!();
+                      if (widget.onOpenSidebar != null) {
+                        widget.onOpenSidebar!();
                       }
                     },
                   ),
@@ -146,69 +184,95 @@ class PomodoroTimerView extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                GestureDetector(
-                  onTap: () {
-                    if (state.status == TimerStatus.running) {
-                      context.read<PomodoroTimerCubit>().pauseTimer();
-                    } else {
-                      context.read<PomodoroTimerCubit>().startTimer();
-                    }
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 50,
-                      vertical: 15,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(30),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.5),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Text(
-                      state.status == TimerStatus.running ? 'PAUSE' : 'START',
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        letterSpacing: 2.0,
+                MouseRegion(
+                  onEnter: (_) => setState(() => _isStartButtonHovered = true),
+                  onExit: (_) => setState(() => _isStartButtonHovered = false),
+                  child: GestureDetector(
+                    onTap: () {
+                      if (state.status == TimerStatus.running) {
+                        context.read<PomodoroTimerCubit>().pauseTimer();
+                      } else {
+                        context.read<PomodoroTimerCubit>().startTimer();
+                      }
+                    },
+                    child: AnimatedScale(
+                      scale: _isStartButtonHovered ? 1.05 : 1.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 50,
+                          vertical: 15,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _isStartButtonHovered
+                              ? Colors.white.withValues(alpha: 0.3)
+                              : Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(30),
+                          border: Border.all(
+                            color: _isStartButtonHovered
+                                ? Colors.white.withValues(alpha: 0.7)
+                                : Colors.white.withValues(alpha: 0.5),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Text(
+                          state.status == TimerStatus.running ? 'PAUSE' : 'START',
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            letterSpacing: 2.0,
+                          ),
+                        ),
                       ),
                     ),
                   ),
                 ),
                 const SizedBox(width: 20),
-                GestureDetector(
-                  onTap: () {
-                    context.read<PomodoroTimerCubit>().toggleRestMode();
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 50,
-                      vertical: 15,
-                    ),
-                    decoration: BoxDecoration(
-                      color: state.isRestMode
-                          ? Colors.white
-                          : Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(30),
-                      border: Border.all(
-                        color: state.isRestMode
-                            ? Colors.white
-                            : Colors.white.withValues(alpha: 0.5),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Text(
-                      'BREAK',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: state.isRestMode
-                            ? Colors.black
-                            : Colors.white,
-                        letterSpacing: 2.0,
+                MouseRegion(
+                  onEnter: (_) => setState(() => _isBreakButtonHovered = true),
+                  onExit: (_) => setState(() => _isBreakButtonHovered = false),
+                  child: GestureDetector(
+                    onTap: () {
+                      context.read<PomodoroTimerCubit>().toggleRestMode();
+                    },
+                    child: AnimatedScale(
+                      scale: _isBreakButtonHovered ? 1.05 : 1.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 50,
+                          vertical: 15,
+                        ),
+                        decoration: BoxDecoration(
+                          color: state.isRestMode
+                              ? Colors.white
+                              : _isBreakButtonHovered
+                                  ? Colors.white.withValues(alpha: 0.3)
+                                  : Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(30),
+                          border: Border.all(
+                            color: state.isRestMode
+                                ? Colors.white
+                                : _isBreakButtonHovered
+                                    ? Colors.white.withValues(alpha: 0.7)
+                                    : Colors.white.withValues(alpha: 0.5),
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Text(
+                          'BREAK',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: state.isRestMode
+                                ? Colors.black
+                                : Colors.white,
+                            letterSpacing: 2.0,
+                          ),
+                        ),
                       ),
                     ),
                   ),

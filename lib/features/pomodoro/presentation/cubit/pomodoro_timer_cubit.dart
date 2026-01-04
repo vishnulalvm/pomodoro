@@ -5,6 +5,7 @@ import '../../../../core/services/notification_service.dart';
 import '../../../../core/services/local_storage_service.dart';
 import '../../../../data/models/pomodoro_session.dart';
 import '../../../../data/models/daily_stats.dart';
+import '../../../../data/models/timer_state.dart' as model;
 import '../../../../data/repositories/pomodoro_repository.dart';
 import '../../../../data/repositories/stats_repository.dart';
 import '../../../../data/repositories/firebase_stats_repository.dart';
@@ -25,6 +26,7 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
 
   DateTime? _sessionStartTime;
   int? _currentTaskId;
+  String? _currentSessionId; // For tracking partial sessions
 
   // Store elapsed time for each mode separately
   final Map<TimerMode, int> _modeElapsedTimes = {
@@ -74,9 +76,13 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
     } else {
       // Pomodoro timer
       _sessionStartTime = DateTime.now();
+      _currentSessionId = '${DateTime.now().millisecondsSinceEpoch}';
       final newStatus = TimerStatus.running;
       _modeStatuses[state.mode] = newStatus;
       emit(state.copyWith(status: newStatus));
+
+      // Sync timer state to Firebase when starting
+      _syncTimerStateToFirebase();
 
       _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
         if (state.elapsed < state.duration) {
@@ -96,6 +102,10 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
       final newStatus = TimerStatus.paused;
       _modeStatuses[state.mode] = newStatus;
       emit(state.copyWith(status: newStatus));
+
+      // Sync timer state and save partial session to Firebase when pausing
+      _syncTimerStateToFirebase();
+      _savePartialSession();
     }
   }
 
@@ -172,6 +182,10 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
       ));
     }
     _sessionStartTime = null;
+    _currentSessionId = null;
+
+    // Clear Firebase timer state when resetting
+    _clearFirebaseTimerState();
   }
 
   void toggleRestMode() {
@@ -283,11 +297,25 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
             pomodoroMinutes: pomodoroMinutes,
             restMinutes: 0, // No rest time in pomodoro mode
           );
+
+          // Mark partial session as completed
+          if (_currentSessionId != null) {
+            await _firebaseStatsRepository.completePartialSession(
+              userId,
+              _currentSessionId!,
+            );
+          }
+
+          // Clear Firebase timer state since session is complete
+          await _clearFirebaseTimerState();
         } catch (e) {
           print('Error syncing to Firebase: $e');
         }
       }
     }
+
+    // Reset session ID
+    _currentSessionId = null;
 
     // Auto-switch Logic
     int newCompletedPomodoros = state.completedPomodoros;
@@ -380,6 +408,92 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
   void _stopAlarm() {
     _alarmTimer?.cancel();
     _audioPlayer.stop();
+  }
+
+  // ==================== FIREBASE SYNC HELPERS ====================
+
+  /// Sync current timer state to Firebase for cross-device sync
+  Future<void> _syncTimerStateToFirebase() async {
+    try {
+      final userId = await _localStorageService.getEmail();
+      if (userId == null) return;
+
+      final timerState = model.TimerState(
+        userId: userId,
+        remainingSeconds: state.duration - state.elapsed,
+        mode: _mapTimerModeToString(state.mode),
+        status: _mapTimerStatusToString(state.status),
+        sessionStartTime: _sessionStartTime ?? DateTime.now(),
+        completedPomodoros: state.completedPomodoros,
+        currentTaskId: _currentTaskId?.toString(),
+        lastUpdated: DateTime.now(),
+      );
+
+      await _firebaseStatsRepository.saveTimerState(timerState);
+    } catch (e) {
+      print('Error syncing timer state to Firebase: $e');
+    }
+  }
+
+  /// Save partial session data when pausing
+  Future<void> _savePartialSession() async {
+    try {
+      final userId = await _localStorageService.getEmail();
+      if (userId == null || _sessionStartTime == null) return;
+
+      // Generate session ID if not exists
+      _currentSessionId ??= '${DateTime.now().millisecondsSinceEpoch}';
+
+      final elapsedMinutes = state.elapsed ~/ 60;
+
+      await _firebaseStatsRepository.savePartialSession(
+        userId: userId,
+        sessionId: _currentSessionId!,
+        startTime: _sessionStartTime!,
+        accumulatedMinutes: elapsedMinutes,
+        mode: _mapTimerModeToString(state.mode),
+        taskId: _currentTaskId?.toString(),
+        isCompleted: false,
+      );
+    } catch (e) {
+      print('Error saving partial session: $e');
+    }
+  }
+
+  /// Clear Firebase timer state (on completion or reset)
+  Future<void> _clearFirebaseTimerState() async {
+    try {
+      final userId = await _localStorageService.getEmail();
+      if (userId == null) return;
+
+      await _firebaseStatsRepository.deleteTimerState(userId);
+    } catch (e) {
+      print('Error clearing Firebase timer state: $e');
+    }
+  }
+
+  String _mapTimerModeToString(TimerMode mode) {
+    switch (mode) {
+      case TimerMode.pomodoro:
+        return 'pomodoro';
+      case TimerMode.rest:
+        return 'rest';
+      case TimerMode.longRest:
+        return 'longRest';
+    }
+  }
+
+  String _mapTimerStatusToString(TimerStatus status) {
+    switch (status) {
+      case TimerStatus.initial:
+        return 'idle';
+      case TimerStatus.running:
+        return 'running';
+      case TimerStatus.paused:
+        return 'paused';
+      case TimerStatus.completed:
+        return 'completed';
+    }
   }
 
   @override

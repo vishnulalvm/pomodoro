@@ -1,5 +1,5 @@
 name: pomodoro
-description: "A new Flutter project."
+description: "Pomodoro - Focus Timer & Task Manager"
 publish_to: "none"
 version: 1.0.0+1
 
@@ -39,11 +39,11 @@ flutter:
     - assets/icons/
 
 flutter_native_splash:
-  color: "#1a1a2e"
+  color: "#0D47A1"
   image: assets/icons/pomodoro_icon.png
   android: true
   ios: true
   web: true
   android_12:
-    color: "#1a1a2e"
+    color: "#0D47A1"
     image: assets/icons/pomodoro_icon.png
