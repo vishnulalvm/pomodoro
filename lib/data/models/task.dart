@@ -27,4 +27,26 @@ class Task extends HiveObject {
   }) {
     createdAt = DateTime.now();
   }
+
+  // Convert to Map for Firestore
+  Map<String, dynamic> toMap({String? userId}) {
+    return {
+      if (userId != null) 'userId': userId,
+      'title': title,
+      'isCompleted': isCompleted,
+      'createdAt': createdAt.toIso8601String(),
+      'pomodoroCount': pomodoroCount,
+      'completedAt': isCompleted ? DateTime.now().toIso8601String() : null,
+    };
+  }
+
+  // Create from Firestore Map
+  factory Task.fromMap(Map<String, dynamic> map, {int? localId}) {
+    return Task(
+      id: localId,
+      title: map['title'] as String,
+      isCompleted: map['isCompleted'] as bool? ?? false,
+      pomodoroCount: map['pomodoroCount'] as int? ?? 0,
+    )..createdAt = DateTime.parse(map['createdAt'] as String);
+  }
 }

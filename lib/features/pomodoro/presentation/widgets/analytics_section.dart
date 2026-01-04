@@ -67,6 +67,14 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
                           ? (state.totalFocusTimeMinutes / state.dailyStats.length / 60).toStringAsFixed(1)
                           : '0.0';
 
+                      // Get Firebase analytics data
+                      final analytics = state.userAnalytics;
+                      final streak = state.streakStats;
+                      final currentStreak = streak?.currentStreak ?? 0;
+                      final longestStreak = streak?.longestStreak ?? 0;
+                      final totalPomodoroTime = analytics?.totalPomodoroTimeFormatted ?? '0h 0m';
+                      final totalRestTime = analytics?.totalRestTimeFormatted ?? '0h 0m';
+
                       // Prepare chart data
                       final last7Days = state.dailyStats.length > 7
                           ? state.dailyStats.sublist(state.dailyStats.length - 7)
@@ -81,6 +89,14 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
+                                if (currentStreak > 0)
+                                  _buildStatCard(
+                                    context,
+                                    '🔥 Current Streak',
+                                    '$currentStreak days',
+                                    Colors.deepOrange,
+                                  ),
+                                if (currentStreak > 0) const SizedBox(height: 16),
                                 _buildStatCard(
                                   context,
                                   'Total Pomodoros',
@@ -90,17 +106,33 @@ class _AnalyticsSectionState extends State<AnalyticsSection> {
                                 const SizedBox(height: 16),
                                 _buildStatCard(
                                   context,
-                                  'Total Focus',
-                                  '${totalFocusHours}h',
+                                  'Total Focus Time',
+                                  analytics != null ? totalPomodoroTime : '${totalFocusHours}h',
                                   Colors.cyan,
                                 ),
                                 const SizedBox(height: 16),
-                                _buildStatCard(
-                                  context,
-                                  'Avg Daily',
-                                  '${avgDaily}h',
-                                  Colors.greenAccent,
-                                ),
+                                if (analytics != null)
+                                  _buildStatCard(
+                                    context,
+                                    'Total Rest Time',
+                                    totalRestTime,
+                                    Colors.greenAccent,
+                                  ),
+                                if (analytics == null)
+                                  _buildStatCard(
+                                    context,
+                                    'Avg Daily',
+                                    '${avgDaily}h',
+                                    Colors.greenAccent,
+                                  ),
+                                if (longestStreak > 0) const SizedBox(height: 16),
+                                if (longestStreak > 0)
+                                  _buildStatCard(
+                                    context,
+                                    '⭐ Best Streak',
+                                    '$longestStreak days',
+                                    Colors.purpleAccent,
+                                  ),
                               ],
                             ),
                           ),

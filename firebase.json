@@ -1,1 +1,55 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"pomodoro-fb0a7","appId":"1:295388771472:android:bd5a2fc48f7060fb151415","fileOutput":"android/app/google-services.json"}},"ios":{"default":{"projectId":"pomodoro-fb0a7","appId":"1:295388771472:ios:884d5b70734cac2c151415","uploadDebugSymbols":false,"fileOutput":"ios/Runner/GoogleService-Info.plist"}},"macos":{"default":{"projectId":"pomodoro-fb0a7","appId":"1:295388771472:ios:884d5b70734cac2c151415","uploadDebugSymbols":false,"fileOutput":"macos/Runner/GoogleService-Info.plist"}},"dart":{"lib/firebase_options.dart":{"projectId":"pomodoro-fb0a7","configurations":{"android":"1:295388771472:android:bd5a2fc48f7060fb151415","ios":"1:295388771472:ios:884d5b70734cac2c151415","macos":"1:295388771472:ios:884d5b70734cac2c151415","web":"1:295388771472:web:f0e13ac079a51ce5151415","windows":"1:295388771472:web:d41250623cd5a15e151415"}}}}}}
+{
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "pomodoro-fb0a7",
+          "appId": "1:295388771472:android:bd5a2fc48f7060fb151415",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "pomodoro-fb0a7",
+          "appId": "1:295388771472:ios:884d5b70734cac2c151415",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "macos": {
+        "default": {
+          "projectId": "pomodoro-fb0a7",
+          "appId": "1:295388771472:ios:884d5b70734cac2c151415",
+          "uploadDebugSymbols": false,
+          "fileOutput": "macos/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "pomodoro-fb0a7",
+          "configurations": {
+            "android": "1:295388771472:android:bd5a2fc48f7060fb151415",
+            "ios": "1:295388771472:ios:884d5b70734cac2c151415",
+            "macos": "1:295388771472:ios:884d5b70734cac2c151415",
+            "web": "1:295388771472:web:f0e13ac079a51ce5151415",
+            "windows": "1:295388771472:web:d41250623cd5a15e151415"
+          }
+        }
+      }
+    }
+  }
+}
