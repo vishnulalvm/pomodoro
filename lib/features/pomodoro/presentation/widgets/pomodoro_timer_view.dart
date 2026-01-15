@@ -1,4 +1,6 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../cubit/pomodoro_timer_cubit.dart';
 import '../cubit/pomodoro_timer_state.dart';
@@ -36,8 +38,10 @@ class _PomodoroTimerViewState extends State<PomodoroTimerView> {
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: MouseRegion(
-            onEnter: (_) => setState(() => _durationBubbleHovered[duration] = true),
-            onExit: (_) => setState(() => _durationBubbleHovered[duration] = false),
+            onEnter: (_) =>
+                setState(() => _durationBubbleHovered[duration] = true),
+            onExit: (_) =>
+                setState(() => _durationBubbleHovered[duration] = false),
             child: GestureDetector(
               onTap: () {
                 context.read<PomodoroTimerCubit>().setRestDuration(duration);
@@ -54,14 +58,14 @@ class _PomodoroTimerViewState extends State<PomodoroTimerView> {
                     color: isSelected
                         ? Colors.white.withValues(alpha: 0.3)
                         : isHovered
-                            ? Colors.white.withValues(alpha: 0.25)
-                            : Colors.white.withValues(alpha: 0.15),
+                        ? Colors.white.withValues(alpha: 0.25)
+                        : Colors.white.withValues(alpha: 0.15),
                     border: Border.all(
                       color: isSelected
                           ? Colors.white.withValues(alpha: 0.7)
                           : isHovered
-                              ? Colors.white.withValues(alpha: 0.5)
-                              : Colors.white.withValues(alpha: 0.3),
+                          ? Colors.white.withValues(alpha: 0.5)
+                          : Colors.white.withValues(alpha: 0.3),
                       width: 2,
                     ),
                   ),
@@ -88,11 +92,33 @@ class _PomodoroTimerViewState extends State<PomodoroTimerView> {
 
   @override
   Widget build(BuildContext context) {
-    return BlocBuilder<PomodoroTimerCubit, PomodoroTimerState>(
+    return BlocConsumer<PomodoroTimerCubit, PomodoroTimerState>(
+      listener: (context, state) {
+        final remaining = state.isRestMode
+            ? (state.restDuration ?? 0) - state.restElapsed
+            : state.duration - state.elapsed;
+
+        // Update browser title
+        final timeString = _formatTime(remaining);
+        final modeString = state.isRestMode ? 'Rest' : 'Focus';
+        SystemChrome.setApplicationSwitcherDescription(
+          ApplicationSwitcherDescription(
+            label: '$timeString - $modeString | Pomodoro',
+            primaryColor: Theme.of(context).primaryColor.value,
+          ),
+        );
+      },
       builder: (context, state) {
         final remaining = state.isRestMode
             ? (state.restDuration ?? 0) - state.restElapsed
             : state.duration - state.elapsed;
+
+        final duration = state.isRestMode
+            ? (state.restDuration ?? 1)
+            : state.duration;
+
+        // Avoid division by zero
+        final progress = duration > 0 ? remaining / duration : 0.0;
 
         return Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -114,24 +140,46 @@ class _PomodoroTimerViewState extends State<PomodoroTimerView> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Timer Display
-                  Text(
-                    _formatTime(remaining),
-                    style: const TextStyle(
-                      fontSize: 120, // Huge font size
-                      fontWeight: FontWeight.w900, // Extra Bold
-                      color: Colors.white, // All text in white
-                      height: 1.0,
-                    ),
+                  // Timer Display with Circular Progress
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      SizedBox(
+                        width: 300,
+                        height: 300,
+                        child: CircularProgressIndicator(
+                          value: progress,
+                          strokeWidth: 15,
+                          strokeCap: StrokeCap.round,
+                          valueColor: const AlwaysStoppedAnimation<Color>(
+                            Colors.white,
+                          ),
+                          backgroundColor: Colors.white.withValues(alpha: 0.1),
+                        ),
+                      ),
+                      Text(
+                        _formatTime(remaining),
+                        style: const TextStyle(
+                          fontSize: 80, // Slightly smaller to fit in circle
+                          fontWeight: FontWeight.w900, // Extra Bold
+                          color: Colors.white, // All text in white
+                          height: 1.0,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
                   ),
                   // Reset button - only show when timer is running or paused
                   SizedBox(
                     height: 48,
-                    child: (state.status == TimerStatus.running ||
+                    child:
+                        (state.status == TimerStatus.running ||
                             state.status == TimerStatus.paused)
                         ? MouseRegion(
-                            onEnter: (_) => setState(() => _isResetButtonHovered = true),
-                            onExit: (_) => setState(() => _isResetButtonHovered = false),
+                            onEnter: (_) =>
+                                setState(() => _isResetButtonHovered = true),
+                            onExit: (_) =>
+                                setState(() => _isResetButtonHovered = false),
                             child: GestureDetector(
                               onTap: () {
                                 context.read<PomodoroTimerCubit>().resetTimer();
@@ -217,7 +265,9 @@ class _PomodoroTimerViewState extends State<PomodoroTimerView> {
                           ),
                         ),
                         child: Text(
-                          state.status == TimerStatus.running ? 'PAUSE' : 'START',
+                          state.status == TimerStatus.running
+                              ? 'PAUSE'
+                              : 'START',
                           style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.bold,
@@ -250,15 +300,15 @@ class _PomodoroTimerViewState extends State<PomodoroTimerView> {
                           color: state.isRestMode
                               ? Colors.white
                               : _isBreakButtonHovered
-                                  ? Colors.white.withValues(alpha: 0.3)
-                                  : Colors.white.withValues(alpha: 0.2),
+                              ? Colors.white.withValues(alpha: 0.3)
+                              : Colors.white.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(30),
                           border: Border.all(
                             color: state.isRestMode
                                 ? Colors.white
                                 : _isBreakButtonHovered
-                                    ? Colors.white.withValues(alpha: 0.7)
-                                    : Colors.white.withValues(alpha: 0.5),
+                                ? Colors.white.withValues(alpha: 0.7)
+                                : Colors.white.withValues(alpha: 0.5),
                             width: 1.5,
                           ),
                         ),

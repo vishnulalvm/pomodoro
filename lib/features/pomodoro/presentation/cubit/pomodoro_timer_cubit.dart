@@ -53,21 +53,29 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
     _currentTaskId = taskId;
   }
 
+  DateTime? _timerStartTime;
+  int _elapsedBeforeSuspending = 0;
+
   void startTimer() {
     if (state.status == TimerStatus.running) return;
 
     // Stop alarm sound if it's playing
     _stopAlarm();
 
+    _timerStartTime = DateTime.now();
+
     if (state.isRestMode) {
-      // REST MODE timer
+      _elapsedBeforeSuspending = state.restElapsed;
       if (state.restDuration == null) return; // No duration selected
 
       emit(state.copyWith(status: TimerStatus.running));
 
       _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (state.restElapsed < state.restDuration!) {
-          final newElapsed = state.restElapsed + 1;
+        final now = DateTime.now();
+        final secondsPassed = now.difference(_timerStartTime!).inSeconds;
+        final newElapsed = _elapsedBeforeSuspending + secondsPassed;
+
+        if (newElapsed < state.restDuration!) {
           emit(state.copyWith(restElapsed: newElapsed));
         } else {
           _completeTimer();
@@ -77,6 +85,8 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
       // Pomodoro timer
       _sessionStartTime = DateTime.now();
       _currentSessionId = '${DateTime.now().millisecondsSinceEpoch}';
+      _elapsedBeforeSuspending = state.elapsed;
+
       final newStatus = TimerStatus.running;
       _modeStatuses[state.mode] = newStatus;
       emit(state.copyWith(status: newStatus));
@@ -85,8 +95,11 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
       _syncTimerStateToFirebase();
 
       _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (state.elapsed < state.duration) {
-          final newElapsed = state.elapsed + 1;
+        final now = DateTime.now();
+        final secondsPassed = now.difference(_timerStartTime!).inSeconds;
+        final newElapsed = _elapsedBeforeSuspending + secondsPassed;
+
+        if (newElapsed < state.duration) {
           _modeElapsedTimes[state.mode] = newElapsed;
           emit(state.copyWith(elapsed: newElapsed));
         } else {
@@ -99,9 +112,27 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
   void pauseTimer() {
     if (state.status == TimerStatus.running) {
       _timer?.cancel();
+
       final newStatus = TimerStatus.paused;
       _modeStatuses[state.mode] = newStatus;
-      emit(state.copyWith(status: newStatus));
+
+      // Update one last time to ensure precision before pausing
+      if (_timerStartTime != null) {
+        final now = DateTime.now();
+        final secondsPassed = now.difference(_timerStartTime!).inSeconds;
+        final finalElapsed = _elapsedBeforeSuspending + secondsPassed;
+
+        if (state.isRestMode) {
+          emit(state.copyWith(status: newStatus, restElapsed: finalElapsed));
+        } else {
+          _modeElapsedTimes[state.mode] = finalElapsed;
+          emit(state.copyWith(status: newStatus, elapsed: finalElapsed));
+        }
+      } else {
+        emit(state.copyWith(status: newStatus));
+      }
+
+      _timerStartTime = null;
 
       // Sync timer state and save partial session to Firebase when pausing
       _syncTimerStateToFirebase();
@@ -111,6 +142,8 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
 
   void stopTimer() {
     _timer?.cancel();
+    _timerStartTime = null;
+    _elapsedBeforeSuspending = 0;
     emit(state.copyWith(status: TimerStatus.initial, elapsed: 0));
   }
 
@@ -138,23 +171,33 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
     final savedElapsed = _modeElapsedTimes[mode] ?? 0;
     final savedStatus = _modeStatuses[mode] ?? TimerStatus.initial;
 
-    emit(state.copyWith(
-      mode: mode,
-      duration: newDuration,
-      elapsed: savedElapsed,
-      status: savedStatus,
-    ));
+    emit(
+      state.copyWith(
+        mode: mode,
+        duration: newDuration,
+        elapsed: savedElapsed,
+        status: savedStatus,
+      ),
+    );
 
     // If we were running before switching, continue running in the new mode
     if (wasRunning) {
       _sessionStartTime = DateTime.now();
+
+      // Setup for new timer
+      _timerStartTime = DateTime.now();
+      _elapsedBeforeSuspending = savedElapsed;
+
       final runningStatus = TimerStatus.running;
       _modeStatuses[mode] = runningStatus;
       emit(state.copyWith(status: runningStatus));
 
       _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (state.elapsed < state.duration) {
-          final newElapsed = state.elapsed + 1;
+        final now = DateTime.now();
+        final secondsPassed = now.difference(_timerStartTime!).inSeconds;
+        final newElapsed = _elapsedBeforeSuspending + secondsPassed;
+
+        if (newElapsed < state.duration) {
           _modeElapsedTimes[state.mode] = newElapsed;
           emit(state.copyWith(elapsed: newElapsed));
         } else {
@@ -166,20 +209,17 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
 
   void resetTimer() {
     _timer?.cancel();
+    _timerStartTime = null;
+    _elapsedBeforeSuspending = 0;
+
     if (state.isRestMode) {
       // Reset rest mode timer
-      emit(state.copyWith(
-        status: TimerStatus.initial,
-        restElapsed: 0,
-      ));
+      emit(state.copyWith(status: TimerStatus.initial, restElapsed: 0));
     } else {
       // Reset pomodoro timer
       _modeElapsedTimes[state.mode] = 0;
       _modeStatuses[state.mode] = TimerStatus.initial;
-      emit(state.copyWith(
-        status: TimerStatus.initial,
-        elapsed: 0,
-      ));
+      emit(state.copyWith(status: TimerStatus.initial, elapsed: 0));
     }
     _sessionStartTime = null;
     _currentSessionId = null;
@@ -191,39 +231,49 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
   void toggleRestMode() {
     _timer?.cancel();
     _stopAlarm();
+    _timerStartTime = null;
+    _elapsedBeforeSuspending = 0;
 
     if (state.isRestMode) {
       // Toggle OFF: Return to Pomodoro mode, reset rest timer
-      emit(state.copyWith(
-        isRestMode: false,
-        status: _modeStatuses[state.mode] ?? TimerStatus.initial,
-        elapsed: _modeElapsedTimes[state.mode] ?? 0,
-        restDuration: null,
-        restElapsed: 0,
-      ));
+      emit(
+        state.copyWith(
+          isRestMode: false,
+          status: _modeStatuses[state.mode] ?? TimerStatus.initial,
+          elapsed: _modeElapsedTimes[state.mode] ?? 0,
+          restDuration: null,
+          restElapsed: 0,
+        ),
+      );
     } else {
       // Toggle ON: Enter REST MODE
-      emit(state.copyWith(
-        isRestMode: true,
-        status: TimerStatus.initial,
-        restDuration: null,
-        restElapsed: 0,
-      ));
+      emit(
+        state.copyWith(
+          isRestMode: true,
+          status: TimerStatus.initial,
+          restDuration: null,
+          restElapsed: 0,
+        ),
+      );
     }
   }
 
   void setRestDuration(int minutes) {
     if (state.isRestMode) {
-      emit(state.copyWith(
-        restDuration: minutes * 60,
-        restElapsed: 0,
-        status: TimerStatus.initial,
-      ));
+      emit(
+        state.copyWith(
+          restDuration: minutes * 60,
+          restElapsed: 0,
+          status: TimerStatus.initial,
+        ),
+      );
     }
   }
 
   Future<void> _completeTimer() async {
     _timer?.cancel();
+    _timerStartTime = null;
+    _elapsedBeforeSuspending = 0;
 
     if (state.isRestMode) {
       // REST MODE completion
@@ -283,7 +333,9 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
           final today = DateTime.now();
 
           // Get current daily stats from local Hive
-          final localStats = await _statsRepository.getOrCreateDailyStats(today);
+          final localStats = await _statsRepository.getOrCreateDailyStats(
+            today,
+          );
           final dailyStat = DailyStats(
             date: today,
             completedPomodoros: localStats.completedPomodoros,
