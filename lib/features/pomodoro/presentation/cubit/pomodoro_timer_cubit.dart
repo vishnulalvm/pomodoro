@@ -65,6 +65,7 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
     _timerStartTime = DateTime.now();
 
     if (state.isRestMode) {
+      _sessionStartTime = DateTime.now(); // Track start of rest session
       _elapsedBeforeSuspending = state.restElapsed;
       if (state.restDuration == null) return; // No duration selected
 
@@ -233,6 +234,8 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
     _stopAlarm();
     _timerStartTime = null;
     _elapsedBeforeSuspending = 0;
+    _sessionStartTime = null; // Prevent leaking session data
+    _currentSessionId = null;
 
     if (state.isRestMode) {
       // Toggle OFF: Return to Pomodoro mode, reset rest timer
@@ -286,7 +289,7 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
 
       // Track rest time
       if (_sessionStartTime != null) {
-        final restMinutes = state.duration ~/ 60;
+        final restMinutes = (state.restDuration ?? 0) ~/ 60;
 
         // Update Firebase analytics with rest time
         final userId = await _localStorageService.getEmail();
@@ -444,6 +447,10 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
 
   Future<void> _playSound() async {
     try {
+      emit(state.copyWith(isAlarmPlaying: true)); // Update UI
+
+      // Ensure volume is max
+      await _audioPlayer.setVolume(1.0);
       await _audioPlayer.play(AssetSource('sounds/pomo_alrm.mp3'));
 
       // Stop the alarm after 10 seconds
@@ -453,13 +460,16 @@ class PomodoroTimerCubit extends Cubit<PomodoroTimerState> {
       });
     } catch (e) {
       // Handle audio error (log it or ignore)
-      // print('Error playing sound: $e');
+      print('Error playing sound: $e');
+      // If error, reset state so button doesn't get stuck
+      emit(state.copyWith(isAlarmPlaying: false));
     }
   }
 
   void _stopAlarm() {
     _alarmTimer?.cancel();
     _audioPlayer.stop();
+    emit(state.copyWith(isAlarmPlaying: false)); // Update UI
   }
 
   // ==================== FIREBASE SYNC HELPERS ====================

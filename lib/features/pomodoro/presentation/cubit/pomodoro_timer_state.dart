@@ -17,6 +17,8 @@ class PomodoroTimerState extends Equatable {
   final int? restDuration;
   final int restElapsed;
 
+  final bool isAlarmPlaying;
+
   const PomodoroTimerState({
     required this.duration,
     this.elapsed = 0,
@@ -26,6 +28,7 @@ class PomodoroTimerState extends Equatable {
     this.isRestMode = false,
     this.restDuration,
     this.restElapsed = 0,
+    this.isAlarmPlaying = false,
   });
 
   PomodoroTimerState copyWith({
@@ -37,6 +40,7 @@ class PomodoroTimerState extends Equatable {
     bool? isRestMode,
     int? restDuration,
     int? restElapsed,
+    bool? isAlarmPlaying,
   }) {
     return PomodoroTimerState(
       duration: duration ?? this.duration,
@@ -47,6 +51,7 @@ class PomodoroTimerState extends Equatable {
       isRestMode: isRestMode ?? this.isRestMode,
       restDuration: restDuration ?? this.restDuration,
       restElapsed: restElapsed ?? this.restElapsed,
+      isAlarmPlaying: isAlarmPlaying ?? this.isAlarmPlaying,
     );
   }
 
@@ -60,5 +65,6 @@ class PomodoroTimerState extends Equatable {
     isRestMode,
     restDuration,
     restElapsed,
+    isAlarmPlaying,
   ];
 }
